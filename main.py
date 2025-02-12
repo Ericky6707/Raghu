@@ -1,52 +1,106 @@
-# Created by Raghu | Acc Rullx
-# Auto Name Change Script for Facebook Messenger Group
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
+from flask import Flask, render_template_string, request, jsonify
+import requests
 import time
 
-# ========== CONFIGURATION ==========
-FB_EMAIL = "your-email@example.com"  # Your Facebook email
-FB_PASSWORD = "your-password"  # Your Facebook password
-GROUP_CHAT_LINK = "https://www.messenger.com/t/YOUR_GROUP_ID"  # Your Messenger Group Link
-NEW_GROUP_NAME = "My New Auto Group Name"  # New group name
+app = Flask(__name__)
 
-# ========== SELENIUM SETUP ==========
-options = webdriver.ChromeOptions()
-options.add_argument("--headless")  # Runs in background
-options.add_argument("--disable-gpu")
-options.add_argument("--no-sandbox")
+# Function to comment on Facebook post using Token
+def comment_using_token(post_id, token, message):
+    url = f"https://graph.facebook.com/{post_id}/comments"
+    payload = {'access_token': token, 'message': message}
+    response = requests.post(url, data=payload)
+    return response
 
-driver = webdriver.Chrome(options=options)
-driver.get("https://www.messenger.com/")
-time.sleep(5)
+# Function to comment on Facebook post using Cookies (custom approach)
+def comment_using_cookies(post_url, cookies, message):
+    headers = {'User-Agent': 'Mozilla/5.0', 'referer': post_url}
+    response = requests.post(post_url, data={'message': message}, cookies=cookies, headers=headers)
+    return response
 
-# ========== LOGIN TO FACEBOOK ==========
-driver.find_element(By.NAME, "email").send_keys(FB_EMAIL)
-driver.find_element(By.NAME, "pass").send_keys(FB_PASSWORD + Keys.RETURN)
-time.sleep(10)  # Wait for login
+# Function to fetch all post IDs from a page URL
+def fetch_all_posts_from_page(page_url, token):
+    page_id = page_url.split('/')[-1]  # Extract the page ID from URL
+    url = f"https://graph.facebook.com/{page_id}/posts?access_token={token}"
+    response = requests.get(url)
+    
+    if response.ok:
+        posts_data = response.json()
+        return [post['id'] for post in posts_data['data']]  # List of post IDs
+    else:
+        print(f"Error fetching posts: {response.status_code} - {response.text}")
+        return []
 
-# ========== OPEN MESSENGER GROUP ==========
-driver.get(GROUP_CHAT_LINK)
-time.sleep(5)
+# HTML template for the form
+html_form = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Facebook Auto Commenter</title>
+</head>
+<body>
+    <h2>Facebook Auto Commenter</h2>
+    <form method="POST">
+        <label for="page_url">Page URL:</label><br>
+        <input type="text" id="page_url" name="page_url" placeholder="Enter Facebook Page URL" required><br><br>
 
-# ========== OPEN GROUP SETTINGS ==========
-settings_button = driver.find_element(By.XPATH, "//div[@aria-label='Chat settings']")
-settings_button.click()
-time.sleep(2)
+        <label for="token">Facebook Token (Optional):</label><br>
+        <input type="text" id="token" name="token" placeholder="Enter Facebook Token"><br><br>
 
-# ========== CLICK ON "EDIT CHAT NAME" ==========
-rename_option = driver.find_element(By.XPATH, "//span[contains(text(),'Edit chat name')]")
-rename_option.click()
-time.sleep(2)
+        <label for="cookies">Facebook Cookies (Optional):</label><br>
+        <textarea id="cookies" name="cookies" placeholder="Enter cookies in key=value format, separated by semicolons."></textarea><br><br>
 
-# ========== CHANGE GROUP NAME ==========
-group_name_box = driver.find_element(By.XPATH, "//input[@type='text']")
-group_name_box.clear()
-group_name_box.send_keys(NEW_GROUP_NAME + Keys.RETURN)
+        <label for="message">Message:</label><br>
+        <input type="text" id="message" name="message" placeholder="Enter your comment message" required><br><br>
 
-print("✅ Group name changed successfully! | Created by Raghu | Acc Rullx")
+        <label for="time_set">Time Delay (in seconds):</label><br>
+        <input type="number" id="time_set" name="time_set" value="0"><br><br>
 
-time.sleep(5)
-driver.quit()
+        <button type="submit">Submit</button>
+    </form>
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET", "POST"])
+def index():
+    if request.method == "POST":
+        token = request.form.get("token", "").strip()
+        cookies = request.form.get("cookies", "").strip()
+        page_url = request.form.get("page_url", "").strip()
+        message = request.form.get("message", "").strip()
+        time_set = int(request.form.get("time_set", 0))
+
+        # Fetch all post IDs from the page
+        post_ids = fetch_all_posts_from_page(page_url, token)
+
+        # Delay before sending the comment
+        time.sleep(time_set)
+
+        # Post comments on all posts
+        success_count = 0
+        failure_count = 0
+        for post_id in post_ids:
+            if token:
+                response = comment_using_token(post_id, token, message)
+            elif cookies:
+                cookies_dict = {cookie.split('=')[0]: cookie.split('=')[1] for cookie in cookies.split(';')}
+                response = comment_using_cookies(page_url, cookies_dict, message)
+            else:
+                return jsonify({"error": "No token or cookies provided!"})
+
+            if response.ok:
+                success_count += 1
+            else:
+                failure_count += 1
+
+        return jsonify({
+            "success": f"Successfully commented on {success_count} posts.",
+            "failed": f"Failed to comment on {failure_count} posts."
+        })
+
+    return render_template_string(html_form)
+
+if __name__ == "__main__":
+    app.run(debug=True, host='0.0.0.0', port=5000)
