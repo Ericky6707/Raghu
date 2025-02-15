@@ -1,106 +1,82 @@
-from flask import Flask, render_template_string, request, jsonify
 import requests
 import time
+import random
+from flask import Flask
 
 app = Flask(__name__)
 
-# Function to comment on Facebook post using Token
-def comment_using_token(post_id, token, message):
-    url = f"https://graph.facebook.com/{post_id}/comments"
-    payload = {'access_token': token, 'message': message}
-    response = requests.post(url, data=payload)
-    return response
+# 🔹 Facebook Post ID Extract Function
+def get_post_id(post_url):
+    try:
+        return post_url.split("posts/")[1].split("/")[0]
+    except IndexError:
+        return None
 
-# Function to comment on Facebook post using Cookies (custom approach)
-def comment_using_cookies(post_url, cookies, message):
-    headers = {'User-Agent': 'Mozilla/5.0', 'referer': post_url}
-    response = requests.post(post_url, data={'message': message}, cookies=cookies, headers=headers)
-    return response
+# 🔹 User-Agent List (Rotation Ke Liye)
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/92.0.4515.107 Safari/537.36",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 14_2 like Mac OS X) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.77 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 10; SM-G970F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.81 Mobile Safari/537.36"
+]
 
-# Function to fetch all post IDs from a page URL
-def fetch_all_posts_from_page(page_url, token):
-    page_id = page_url.split('/')[-1]  # Extract the page ID from URL
-    url = f"https://graph.facebook.com/{page_id}/posts?access_token={token}"
-    response = requests.get(url)
-    
-    if response.ok:
-        posts_data = response.json()
-        return [post['id'] for post in posts_data['data']]  # List of post IDs
+# 🔹 Facebook Post Link
+POST_URL = "https://www.facebook.com/100046233720065/posts/555023942715392/?mibextid=rS40aB7S9Ucbxw6v"
+
+# 🔹 Facebook Cookies
+COOKIES = "datr=D4ywZ0X9E6MNjCvoCTxIA_le; sb=D4ywZ7gtjO-nHIqqV1zaReOQ; m_pixel_ratio=2; wd=360x615; c_user=61560080098210; fr=0XtupZy5Zm5Cl6zAg.AWWX9O9yg36LSiuCPEQ4Hd0jzKJfo5iyzHeZdQ.BnsIwP..AAA.0.0.BnsIx-.AWVUEbsaX2c; xs=47%3A94hSMKEjmUMb4w%3A2%3A1739623556%3A-1%3A13669; locale=en_GB; ps_l=1; ps_n=1; wl_cbv=v2%3Bclient_version%3A2741%3Btimestamp%3A1739623566; fbl_st=100620419%3BT%3A28993726; vpd=v1%3B615x360x2"
+
+# 🔹 Comments List
+COMMENTS = [
+    "Samart x3 yash here 😝",
+    "Wow, amazing post! 😍",
+    "Bohot badiya post! 🔥",
+    "Nice one! 👍",
+    "Keep it up bro! 💯"
+]
+
+# 🔹 Comment Posting Function
+def post_comment():
+    post_id = get_post_id(POST_URL)
+    if not post_id:
+        print("❌ Invalid Post URL!")
+        return
+
+    url = f"https://www.facebook.com/ufi/add/comment/?ft_ent_identifier={post_id}"
+    headers = {
+        "User-Agent": random.choice(USER_AGENTS),
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Cookie": COOKIES,
+        "Referer": "https://www.facebook.com/",
+        "Origin": "https://www.facebook.com",
+        "Accept-Language": "en-US,en;q=0.9",
+        "DNT": "1",
+        "Connection": "keep-alive"
+    }
+    payload = {
+        "comment_text": random.choice(COMMENTS)
+    }
+
+    response = requests.post(url, data=payload, headers=headers)
+
+    if response.status_code == 200:
+        print(f"✅ Comment Posted Successfully!")
     else:
-        print(f"Error fetching posts: {response.status_code} - {response.text}")
-        return []
+        print(f"❌ Failed to Post Comment! Status Code: {response.status_code}")
+        print(response.text)
 
-# HTML template for the form
-html_form = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Facebook Auto Commenter</title>
-</head>
-<body>
-    <h2>Facebook Auto Commenter</h2>
-    <form method="POST">
-        <label for="page_url">Page URL:</label><br>
-        <input type="text" id="page_url" name="page_url" placeholder="Enter Facebook Page URL" required><br><br>
+# 🔹 Flask Route
+@app.route('/')
+def home():
+    return "✅ Facebook Auto Commenter Running!"
 
-        <label for="token">Facebook Token (Optional):</label><br>
-        <input type="text" id="token" name="token" placeholder="Enter Facebook Token"><br><br>
+# 🔹 Background Loop For Auto Commenting
+def start_commenting():
+    while True:
+        post_comment()
+        time.sleep(100)  # 300 sec = 5 min delay
 
-        <label for="cookies">Facebook Cookies (Optional):</label><br>
-        <textarea id="cookies" name="cookies" placeholder="Enter cookies in key=value format, separated by semicolons."></textarea><br><br>
-
-        <label for="message">Message:</label><br>
-        <input type="text" id="message" name="message" placeholder="Enter your comment message" required><br><br>
-
-        <label for="time_set">Time Delay (in seconds):</label><br>
-        <input type="number" id="time_set" name="time_set" value="0"><br><br>
-
-        <button type="submit">Submit</button>
-    </form>
-</body>
-</html>
-"""
-
-@app.route("/", methods=["GET", "POST"])
-def index():
-    if request.method == "POST":
-        token = request.form.get("token", "").strip()
-        cookies = request.form.get("cookies", "").strip()
-        page_url = request.form.get("page_url", "").strip()
-        message = request.form.get("message", "").strip()
-        time_set = int(request.form.get("time_set", 0))
-
-        # Fetch all post IDs from the page
-        post_ids = fetch_all_posts_from_page(page_url, token)
-
-        # Delay before sending the comment
-        time.sleep(time_set)
-
-        # Post comments on all posts
-        success_count = 0
-        failure_count = 0
-        for post_id in post_ids:
-            if token:
-                response = comment_using_token(post_id, token, message)
-            elif cookies:
-                cookies_dict = {cookie.split('=')[0]: cookie.split('=')[1] for cookie in cookies.split(';')}
-                response = comment_using_cookies(page_url, cookies_dict, message)
-            else:
-                return jsonify({"error": "No token or cookies provided!"})
-
-            if response.ok:
-                success_count += 1
-            else:
-                failure_count += 1
-
-        return jsonify({
-            "success": f"Successfully commented on {success_count} posts.",
-            "failed": f"Failed to comment on {failure_count} posts."
-        })
-
-    return render_template_string(html_form)
-
-if __name__ == "__main__":
-    app.run(debug=True, host='0.0.0.0', port=5000)
+if __name__ == '__main__':
+    from threading import Thread
+    Thread(target=start_commenting).start()  # Auto-comment loop start hoga
+    app.run(host='0.0.0.0', port=10000)
